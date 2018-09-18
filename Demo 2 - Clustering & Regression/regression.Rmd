@@ -1,0 +1,142 @@
+---
+title: "Regression"
+author: "Martin Hanewald"
+date: "1 August 2018"
+output: 
+    html_document:
+        toc: true
+        toc_float: true
+        number_sections: true
+        theme: lumen
+        highlight: pygments
+        df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+```
+
+# Introduction
+
+# Loading libraries
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+library(caret)
+set.seed(1234)
+
+```
+
+# Loading the data
+
+```{r message=FALSE, warning=FALSE}
+orders <- read_csv2('data/orders.csv')
+customers <- read_csv2('data/customers.csv')
+
+```
+
+
+# Calculate some metrics
+
+```{r}
+# RFM Metrix
+# Recency (how long ago), Frequency (how often), Market Value
+R_score <- orders %>% group_by(CustomerID) %>% summarise(R = as.integer(Sys.Date() - max(Date)))
+F_score <- orders %>% group_by(CustomerID) %>% summarise(F = n())
+M_score <- orders %>% group_by(CustomerID) %>% summarise(M = sum(OrderTotal))
+RFM <- R_score %>% inner_join(F_score) %>% inner_join(M_score)
+```
+
+
+# Exploratory analysis
+
+```{r}
+orders %>% ggplot(aes(y=OrderTotal, x=as.factor(ProductID))) + geom_bar(stat='sum')
+orders %>% group_by(CustomerID) %>% 
+    summarise(OrderTotal = sum(OrderTotal)) %>% ggplot(aes(x=OrderTotal)) + geom_histogram()
+```
+
+
+# Clustering
+
+```{r}
+# Cluster auf die RFM Tabelle
+cluster <- RFM %>% 
+    select(-CustomerID) %>% 
+    kmeans(2) # nur 2 Cluster -> High Potential, Low Potential Kunden
+
+# Join die Clusternummer [1 oder 2] zum RFM Frame
+RFM_clust <- RFM %>% 
+    mutate(cluster = as.factor(cluster$cluster))
+
+# plot cluster
+RFM_clust %>% ggplot(aes(
+    x = R,
+    y = F,
+    size = M,
+    color = cluster
+)) + geom_point(alpha = .5) + scale_size(range=c(1,10))
+```
+
+
+# Logistic regression
+
+## Training and Test Set
+```{r}
+modeldat <- customers %>% 
+    inner_join(RFM_clust) %>% 
+    mutate_at(vars(MaritalStatus, Sex, Education), as.factor)
+
+intrain <- createDataPartition(modeldat$cluster, p = .9, list=FALSE)
+
+training <- modeldat[intrain,]
+testing <- modeldat[-intrain,]
+  
+```
+
+## Model fitting
+
+```{r message=TRUE, warning=FALSE}
+formula <- cluster ~ Age + Sex + Education + MaritalStatus
+
+fit <- train(formula, 
+             method="glm", 
+             family="binomial", 
+             data = training)
+
+fit
+```
+
+The best model has the following parameters.
+
+```{r}
+summary(fit)
+```
+
+
+## Model evaluation
+
+```{r}
+predict(fit, testing) %>% 
+    confusionMatrix(testing$cluster)
+```
+
+# Why not try a different model?
+
+```{r, cache=TRUE}
+
+fit2 <- train(formula, method="rpart", data=training)
+fit3 <- train(formula, method="rf", data=training)
+fit4 <- train(formula, method="gbm", data=training, verbose=FALSE)
+
+# collect resamples
+results <- resamples(list(glm = fit, rpart=fit2, rf=fit3, gbm=fit4))
+# summarize the distributions
+summary(results)
+# boxplots of results
+bwplot(results)
+
+```
+
+
