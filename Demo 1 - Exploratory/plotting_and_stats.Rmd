@@ -54,7 +54,7 @@ You can always get a more in-depth description of the data with the comman `r ?m
 Investigating the relationship between area and population.
 
 ```{r}
-midwest %>% ggplot(aes(x=area, y=log(poptotal))) + geom_point(alpha=.5) + geom_smooth(method="lm")
+midwest %>% ggplot(aes(x=area, y=poptotal)) + geom_point(alpha=.5) + geom_smooth(method="lm") + scale_y_log10()
 ```
 
 The linear trend only shows a slight positive correlation between area and population.
@@ -84,7 +84,7 @@ midwest %>% group_by(inmetro) %>% count()
 Perform a two-sample t-test:
 
 ```{r}
-t.test(percollege~inmetro, data= midwest, alternative = 'less')
+t.test(percollege ~ inmetro, data= midwest, alternative = 'less')
 ```
 
 The p-value is very small, meaning the null-hypothesis, that people are equally educated 
@@ -96,7 +96,13 @@ in metropolitan or rural areas can be confidently rejected.
 # Investigating the relationship between race and poverty
 
 ```{r}
-midwest %>% ggplot(aes(x=log((100-percwhite)), y=percbelowpoverty)) + geom_point(alpha=.5) + geom_smooth(method="lm")
+midwest <- midwest %>% 
+    mutate(lognonwhite = log(100-percwhite)) 
+
+midwest %>% 
+    ggplot(aes(x=lognonwhite, y=percbelowpoverty)) + 
+    geom_point(alpha=.5) + 
+    geom_smooth(method="lm")
 ```
 
 ## Zooming out to "state level"
@@ -104,7 +110,7 @@ midwest %>% ggplot(aes(x=log((100-percwhite)), y=percbelowpoverty)) + geom_point
 Calculating the mean "lognonwhite percentage" per state:
 
 ```{r}
-plotdat <- midwest %>% mutate(lognonwhite = log(100 - percwhite)) %>% 
+plotdat <- midwest %>% 
     group_by(state) %>% 
     summarise(lognonwhite = mean(lognonwhite),
               percbelowpoverty = mean(percbelowpoverty))
@@ -124,8 +130,10 @@ plotdat %>% ggplot(aes(x=lognonwhite, y=percbelowpoverty)) +
 Let's fortify that thesis with a t-test on two groups.
 
 ```{r}
-testdat <- midwest %>% mutate(lognonwhite = log(100 - percwhite)) %>% 
+testdat <- midwest %>% 
     mutate(lognonwhite_cat = cut(lognonwhite,2)) 
+
+testdat$lognonwhite_cat %>% table
 
 testdat %>% ggplot(aes(y=percbelowpoverty, x=lognonwhite_cat)) + geom_boxplot()
 ```
