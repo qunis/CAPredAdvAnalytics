@@ -1,0 +1,297 @@
+---
+title: "Classification Case-Study"
+author: "Martin Hanewald"
+date: "1 August 2018"
+output: 
+    pdf_document:
+        df_print: paged
+        toc: true
+        toc_depth: 2
+        number_sections: true
+        highlight: pygments
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+options(width = 110)
+```
+
+# Abstract
+
+This analysis is about a classification problem in marketing: how can we find the
+customer group with the highest potential value, on which to focus ones marketing
+activities.
+
+This question is answered in two steps:
+
+1. A cluster analysis is conducted on a dataset of historical transactions of the
+existing customer portfolio in order to separate two groups: **high** and **low** potential customers.
+
+2. A second dataset with demographic information about the existing customers is
+used to train a classification algorithm to predict the group membership.
+
+# Configuration and libraries
+
+```{r libraries, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(caret)
+library(lubridate)
+library(GGally)
+library(rpart.plot)
+```
+
+```{r config, include = FALSE}
+set.seed(1337)
+
+# activate parallel processing
+library(doParallel)
+cl <- makePSOCKcluster(2)
+registerDoParallel(cl)
+
+# color Palette
+qpal <- c("#009fe3","#023e84", "#2bad70", "#e8423b", "#1d1d1b", "#7c7c7b", "#d0d0d0", "#ffffff" )
+```
+
+# Clustering
+
+## Loading data
+
+
+```{r message=FALSE, warning=FALSE}
+orders <- read_csv2('data/orders_sim.csv')
+orders
+```
+
+
+## Preprocessing
+
+### Feature engineering
+
+We create three new features from the transactional data via summarising on the CustomerID's.
+
+1. Recency: Days since last transaction
+2. Frequency: Total transaction count
+3. Market Value: Total revenue
+
+These are the so called RFM metrics.
+
+```{r}
+RFM <- orders %>% 
+    mutate_at(vars(CustomerID), as.factor) %>% 
+    group_by(CustomerID) %>% 
+    summarise(R = as.integer(Sys.Date() - max(Date)),
+              F = n(),
+              M = sum(OrderTotal))
+RFM
+```
+
+### Centering and scaling
+
+For more meaningful exploratory plots we center and scale the RFM matrix.
+
+```{r}
+pre <- preProcess(RFM)
+RFM_centered <- predict(pre, RFM)
+```
+
+## Exploratory analysis
+
+```{r}
+RFM_centered %>% gather(metric, value, -CustomerID) %>% 
+    ggplot(aes(x=value)) + 
+        geom_histogram(color = qpal[1], fill = qpal[2]) +
+        facet_grid(.~metric) + 
+        labs(title='Distributions of the centered and scaled RFM metrics')
+```
+
+```{r}
+RFM_centered %>% 
+    select(-CustomerID) %>% 
+    ggpairs(title='Correlations between RFM metrics')
+```
+
+## k-means Clustering
+
+Based on the RFM metrics we conduct a k-means clustering with k = 2.
+
+```{r}
+cluster <- RFM %>% 
+    select(-CustomerID) %>% 
+    kmeans(2) 
+
+cluster
+```
+
+Joining the cluster assignments to the RFM table.
+
+```{r}
+RFM_clust <- RFM %>% 
+    mutate(cluster = as.factor(cluster$cluster))
+
+RFM_clust
+```
+
+```{r}
+RFM_clust %>% 
+    ggplot(aes(x = R, y = F, size = M,color = cluster)) + 
+    geom_jitter(alpha = .2) + #scale_size(range=c(1,10)) +
+    labs(title = 'Cluster allocation and RFM metrics')
+    
+```
+
+The interpretation of the two clusters can be seen as **high-potential** and **low-potential** customers.
+
+# Classification
+
+## Load data
+
+In order to predict cluster allocation of future customers, we need a demographic
+dataset about our existing customer portfolio.
+
+We load the following set consisting of the attributes 
+
+1. Marital Status
+2. Age
+3. Sex
+4. Education
+
+We try to find a relationship between these attributes and the cluster segment
+to which a customer belongs via training a supervised learning algorithm.
+
+```{r}
+customers <- read_csv2('data/customers_sim.csv') %>% 
+    mutate_at(vars(CustomerID, MaritalStatus, Sex, Education), as.factor)
+customers
+```
+
+Structure of the dataset:
+
+```{r}
+str(customers)
+```
+
+## Preprocessing
+
+### Joining the cluster allocation
+
+We need to add the column **cluster** from our previous analysis to the demographic
+dataset. The join is done over the common field **CustomerID**.
+
+```{r}
+modeldat <- customers %>% 
+    inner_join(RFM_clust) %>% 
+    select(-CustomerID, -R, -F, -M)
+modeldat
+```
+
+### Splitting
+
+We split the joined dataframe in training- and testset using a stratified splitting
+strategy on variable **cluster**, in order to retain an even distribution of both
+clusters in both sets.
+
+```{r}
+intrain <- createDataPartition(modeldat$cluster, p = .8, list=FALSE)
+
+training <- modeldat[intrain,]
+testing <- modeldat[-intrain,]
+```
+
+
+## Model training
+
+We activate 10-fold Cross-Validation for the training procedures.
+
+```{r}
+trControl <- trainControl(method = 'cv')
+fit <- list()
+```
+
+We will fit three different models.
+
+### Logistic regression
+
+```{r message=TRUE, warning=FALSE}
+fit$glm <- train(cluster ~ ., 
+                       method="glm", 
+                       family="binomial",
+                       trControl = trControl,
+                       data = training)
+
+fit$glm
+```
+
+### Partition tree
+
+```{r message=TRUE, warning=FALSE}
+fit$rpart <- train(cluster ~ ., 
+                       method="rpart", 
+                       trControl = trControl,
+                       data = training,
+                       tuneLength = 10)
+
+fit$rpart
+```
+
+### Boosted trees
+
+```{r message=TRUE, warning=FALSE}
+fit$gbm <- train(cluster ~ ., 
+                       method="gbm", 
+                       trControl = trControl,
+                       data = training,
+                       tuneLength = 10,
+                 verbose =F)
+
+fit$gbm
+```
+
+# Model Evaluation
+
+## Performance on training set
+
+We collect the resamples of all three fitted models and plot the distribution
+of the performance statistics **Accuracy** and **Cohen's Kappa**.
+
+```{r}
+rs <- resamples(fit)
+bwplot(rs)
+```
+
+All three models perform almost similarly. Although the boosted model scores
+the highest mean accuracy, it also has a high variance in the metrics. Therefore
+it might not be the most robust choice and we could still stick with a mucher
+easier decision tree model, while retaining some interpretability.
+
+## Performance on test set
+
+```{r}
+prediction <- lapply(fit, predict, newdata = testing) %>% 
+    bind_cols()
+
+prediction %>% 
+    sapply(postResample, obs = testing$cluster) %>% 
+    as.data.frame() %>% 
+    rownames_to_column('metric') %>% 
+    gather(model, value, -metric) %>% 
+    ggplot(aes(x=metric, y = value, fill = model)) + 
+    geom_col(position='dodge') +
+    labs(title='Comparison of performance metrics on test set')
+```
+
+Showing the confusion matrix of the decision tree model on the test set.
+
+
+```{r}
+predict(fit$rpart, testing) %>% 
+    confusionMatrix(testing$cluster)
+```
+
+Visualizing the decision tree.
+
+```{r}
+fit$rpart$finalModel %>% prp()
+```
+
+

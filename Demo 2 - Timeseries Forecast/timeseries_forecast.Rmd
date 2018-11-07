@@ -1,0 +1,213 @@
+---
+title: "Timeseries Forecast Case-Study"
+author: "Martin Hanewald"
+date: "1 August 2018"
+output: 
+    html_document:
+        toc: true
+        toc_float: true
+        number_sections: true
+        theme: lumen
+        highlight: pygments
+        df_print: paged
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(message = FALSE)
+options(width = 110)
+```
+
+# Abstract
+
+This analysis shows a simple ARIMA time-series forecast with captured seasonality.
+An automatic ARIMA fitting is conducted to find the best variant.
+
+# Configuration and libraries
+
+```{r libraries, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(forecast)
+library(lubridate)
+library(DT)
+library(zoo)
+library(knitr)
+```
+
+```{r config, include = FALSE}
+set.seed(1337)
+
+# color Palette
+qpal <- c("#009fe3","#023e84", "#2bad70", "#e8423b", "#1d1d1b", "#7c7c7b", "#d0d0d0", "#ffffff" )
+```
+
+# Loading data
+
+```{r}
+dat_ts <- read_csv2('data/timeseries2.csv') %>% 
+    group_by(time) %>% 
+    summarise(value = sum(value)) %>% 
+    rename(ds = time, y = value) %>% 
+    mutate(week = week(ds))
+```
+
+```{r}
+dat_ts %>% 
+    ggplot(aes(ds, y)) + geom_line() + labs(title='Weekly timeseries')
+```
+
+
+# Preprocessing
+
+## Imputation
+
+As a first step we need to convert the data frame into an R timeseries object
+with the function *ts()*.
+
+```{r}
+timeseries_temp <- ts(dat_ts$y, start = c(2010,45), frequency = 52) 
+```
+
+```{r, echo =F}
+timeseries_temp
+```
+
+Now it comes to our attentation, that there is a missing value (**NA**). This needs to be filled
+in order for any timeseries model to be fitted, since they cannot handle missing values.
+
+We use the automatic imputation function *na.approx()*, which just linearly interpolates between
+adjacent values.
+
+```{r}
+timeseries <- timeseries_temp %>% na.approx()
+timeseries
+```
+
+To get a first feel for the trend and seasonality components of the time series
+we can apply a quick decomposition with the function *decompose()*. This
+fits an exponential model to the timeseries and the components can be plotted.
+
+```{r}
+timeseries %>% decompose() %>% plot()
+```
+
+## Splitting
+
+When splitting a timeseries it is important that we cannot apply random sampling,
+since we need to have an unbroken series for timeseries models to be applied.
+
+Therefore we choose the last year in the data set as a test set and all prior data as
+training set.
+
+```{r}
+training <- timeseries %>% window(end=c(2012,52))
+testing <- timeseries %>% window(start=c(2013,1))
+```
+
+```{r}
+plot(timeseries)
+lines(training, col='blue')
+lines(testing, col='red')
+```
+
+```{r}
+training
+```
+
+```{r}
+testing
+```
+
+
+# Model training
+
+Now we can fit a timeseries model to the training set.
+
+## ARIMA (1,0,0)
+
+First we just try out a random ARIMA configuration (a simple AR1 model).
+```{r}
+arima(training, c(1,0,0)) %>% forecast() %>% plot()
+```
+
+The results are not very promising, since the AR1 model is not able to capture any
+seasonality and basically just extends the last known value.
+
+## Automatic ARIMA fitting
+
+The function *auto.arima()* automatically fits the best ARIMA model. As a metric for
+model comparison the **Akaike Information Criterion (AIC)** is used.
+
+```{r}
+fit <- auto.arima(training)
+```
+
+```{r, echo=F}
+fit
+```
+
+# Model evaluation
+
+## Conducting the forecast
+
+In order to evaluate the model, we rely heavily on visual inspection. First the
+forecast covering the testset period is computed.
+
+```{r, echo = T}
+fc <- forecast(fit, h = length(testing))
+plot(fc)
+```
+
+The forecast not only computes the most likely evolution of the timeseries (Point Forecast),
+but also the 80 and 95 % confidence intervals. It is important to note,
+that the confidence interval usually gets wider, the further the forecast runs
+into the future since the stochastic behaviour is compounded every timestep.
+
+As a first visual check, we can check the fit of the model to the training period.
+
+```{r}
+plot(fc)
+lines(fit$fitted, col='blue', lwd=2)
+```
+
+Next we compare the fit on the test period.
+
+```{r}
+plot(fc)
+lines(testing, col='red')
+```
+
+The performance is also measured by performance metrics on both training and testing period.
+
+```{r}
+accuracy(fc, testing) %>% kable()
+```
+
+Especially the MAPE (Mean Absolute Percentage Error) has a very popular interpretation,
+since describes the mean deviation in percent. 
+
+In this instance we a remaining mean deviation of **9.3 %** on the testing period.
+
+
+## Residual checking
+
+A common sanity check for the conducted model is to inspect the residuals, meaning
+the difference between forecast and actuals.
+
+They should be
+
+1. Stationary, i.e. not show time dependend behaviour or autocorrelation
+2. Close to normally distributed
+
+```{r}
+checkresiduals(fit)
+```
+
+Since we fitted a seasonal model it is common practive to only review the residuals
+after the first full period (year), since we have a 100% fit on the first period. 
+
+```{r}
+checkresiduals(fit$residuals %>% window(start=c(2012,1)))
+```
+
+We can see that the residuals look almost flawless. 
