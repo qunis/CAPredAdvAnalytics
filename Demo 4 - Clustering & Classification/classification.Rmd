@@ -3,12 +3,13 @@ title: "Classification Case-Study"
 author: "Martin Hanewald"
 date: "1 August 2018"
 output: 
-    pdf_document:
-        df_print: paged
+    html_document:
         toc: true
-        toc_depth: 2
+        toc_float: true
         number_sections: true
+        theme: lumen
         highlight: pygments
+        df_print: paged
 ---
 
 ```{r setup, include=FALSE}
@@ -294,4 +295,23 @@ Visualizing the decision tree.
 fit$rpart$finalModel %>% prp()
 ```
 
+
+
+```{css, echo=FALSE}
+@media print {
+  div.divFooterLeft {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+  }
+  div.divFooterRight {
+    position: fixed;
+    bottom: 0;
+    right: 0;
+  }    
+}
+```
+
+<div class="divFooterLeft"><img src='figure/ca_logo.svg' width="234px"></div>
+<div class="divFooterRight"><img src='figure/c_by_qunis.svg' width="100px"></div>
 

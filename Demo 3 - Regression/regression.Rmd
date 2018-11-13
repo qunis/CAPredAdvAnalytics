@@ -401,3 +401,21 @@ varImp(fit$xgbtree)
 <!-- fit$poisson -->
 <!-- ``` -->
 
+
+```{css, echo=FALSE}
+@media print {
+  div.divFooterLeft {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+  }
+  div.divFooterRight {
+    position: fixed;
+    bottom: 0;
+    right: 0;
+  }    
+}
+```
+
+<div class="divFooterLeft"><img src='figure/ca_logo.svg' width="234px"></div>
+<div class="divFooterRight"><img src='figure/c_by_qunis.svg' width="100px"></div>

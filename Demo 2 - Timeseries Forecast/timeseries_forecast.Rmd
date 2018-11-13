@@ -51,7 +51,7 @@ dat_ts <- read_csv2('data/timeseries2.csv') %>%
     mutate(week = week(ds))
 ```
 
-```{r}
+```{r message=FALSE, warning=FALSE}
 dat_ts %>% 
     ggplot(aes(ds, y)) + geom_line() + labs(title='Weekly timeseries')
 ```
@@ -211,3 +211,24 @@ checkresiduals(fit$residuals %>% window(start=c(2012,1)))
 ```
 
 We can see that the residuals look almost flawless. 
+
+
+
+```{css, echo=FALSE}
+@media print {
+  div.divFooterLeft {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+  }
+  div.divFooterRight {
+    position: fixed;
+    bottom: 0;
+    right: 0;
+  }    
+}
+```
+
+<div class="divFooterLeft"><img src='figure/ca_logo.svg' width="234px"></div>
+<div class="divFooterRight"><img src='figure/c_by_qunis.svg' width="100px"></div>
+
