@@ -5,8 +5,8 @@ library(tidyverse)
 
 set.seed(20)
 
-orders <- read_csv2('../data/customer/orders.csv')
-customers <- read_csv2('../data/customer/customers.csv')
+orders <- read_csv2('./data/orders.csv')
+customers <- read_csv2('./data/customers.csv')
 
 
 # Errechnung der RFM Metriken 
