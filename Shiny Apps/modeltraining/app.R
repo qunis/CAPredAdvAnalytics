@@ -2,6 +2,7 @@
 qpal <- c("#009fe3","#023e84", "#2bad70", "#e8423b", "#1d1d1b", "#7c7c7b", "#d0d0d0", "#ffffff" )
 
 library(tidyverse)
+library(caret)
 
 set.seed(20)
 
